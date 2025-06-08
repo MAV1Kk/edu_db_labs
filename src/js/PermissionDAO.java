@@ -1,13 +1,16 @@
 package com.example.dao;
 
-import com.example.model.Permission;
+import com.example.model.Account;
 import java.sql.SQLException;
 import java.util.List;
 
-public interface PermissionDAO {
-    void addPermission(Permission permission) throws SQLException;
-    Permission getPermissionById(int id) throws SQLException;
-    List<Permission> getAllPermissions() throws SQLException;
-    void updatePermission(Permission permission) throws SQLException;
-    void deletePermission(int id) throws SQLException;
+/**
+ * Контракт CRUD-операцій з таблицею account.
+ */
+public interface AccountDAO {
+    void addAccount(Account a) throws SQLException;
+    Account getAccountById(int id) throws SQLException;
+    List<Account> getAllAccounts() throws SQLException;
+    void updateAccount(Account a) throws SQLException;
+    void deleteAccount(int id) throws SQLException;
 }

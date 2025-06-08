@@ -1,8 +1,8 @@
-package com.example.dao;
+package com.example;
 
-import com.example.dao.PermissionDAO;
-import com.example.dao.PermissionDAOImpl;
-import com.example.model.Permission;
+import com.example.dao.AccountDAO;
+import com.example.dao.AccountDAOImpl;
+import com.example.model.Account;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -10,30 +10,31 @@ import java.util.List;
 public class Main {
     public static void main(String[] args) {
         try {
-            PermissionDAO permDao = new PermissionDAOImpl();
+            AccountDAO dao = new AccountDAOImpl();
 
-            // Додавання
-            Permission p = new Permission("view_media_request");
-            permDao.addPermission(p);
-            System.out.println("Додано: " + p);
+            // CREATE: додаємо запис
+            Account a = new Account("Olena", "Shevchenko",
+                                    "olena_shev", "olena@example.com",
+                                    "pass123", 2);
+            dao.addAccount(a);
+            System.out.println("Created: " + a);
 
-            // Читання всіх
-            List<Permission> all = permDao.getAllPermissions();
-            System.out.println("Всі записи:");
+            // READ: всі записи
+            List<Account> all = dao.getAllAccounts();
             all.forEach(System.out::println);
 
-            // Оновлення
-            p.setName("edit_media_request");
-            permDao.updatePermission(p);
-            System.out.println("Після оновлення: " + permDao.getPermissionById(p.getId()));
+            // UPDATE: міняємо email
+            a.setEmail("olena.shev@newmail.com");
+            dao.updateAccount(a);
+            System.out.println("After update: " + dao.getAccountById(a.getId()));
 
-            // Видалення
-            //permDao.deletePermission(p.getId());
-            //System.out.println("Після видалення залишились:");
-            //permDao.getAllPermissions().forEach(System.out::println);
+            // DELETE: видаляємо запис
+            dao.deleteAccount(a.getId());
+            System.out.println("After delete:");
+            dao.getAllAccounts().forEach(System.out::println);
 
-        } catch (SQLException e) {
-            e.printStackTrace();
+        } catch (SQLException ex) {
+            ex.printStackTrace();
         }
     }
 }

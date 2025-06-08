@@ -5,19 +5,23 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public class DatabaseConnection {
-    private static final String URL =
-        "jdbc:mysql://localhost:3306/permission_db?useSSL=false&serverTimezone=UTC";
-    private static final String USER     = "root";
-    private static final String PASSWORD = "A1902d2412d0506-";
+    private static final String URL  =
+        "jdbc:mysql://localhost:3306/accounts_db?useSSL=false&serverTimezone=UTC";
+    private static final String USER = "root";
+    private static final String PASS = "your_password_here";
 
-    private static Connection connection;
+    private static Connection conn;
 
     private DatabaseConnection() { }
 
+    /**
+     * Повертає єдине з’єднання з базою.
+     * Якщо з’єднання не існує або закрите — створює нове.
+     */
     public static Connection getConnection() throws SQLException {
-        if (connection == null || connection.isClosed()) {
-            connection = DriverManager.getConnection(URL, USER, PASSWORD);
+        if (conn == null || conn.isClosed()) {
+            conn = DriverManager.getConnection(URL, USER, PASS);
         }
-        return connection;
+        return conn;
     }
 }
