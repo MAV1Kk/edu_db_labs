@@ -1,9 +1,70 @@
-# Permission DB — Структура та реалізація
 
-Цей документ містить **детальний опис** та пояснення всіх кроків для створення та використання бази даних `permission_db` з єдиною таблицею `permission`. Також наведено Java-код, що демонструє підключення до БД та роботу з таблицею через DAO (Data Access Object) патерн.
+# Accounts DB Project
+
+Цей документ докладно пояснює всі кроки від **ініціалізації бази даних** до **запуску Java-аплікації**, яка працює з таблицею `account` через DAO (Data Access Object) патерн.
 
 ---
-## 1. DatabaseConnection.java
+
+## 1. Структура проєкту
+
+```
+accounts-db-project/
+├── sql/
+│   └── create_accounts_db.sql      # SQL-скрипт для створення БД і таблиці
+└── src/
+    └── com/
+        └── example/
+            ├── util/
+            │   └── DatabaseConnection.java   # Клас для управління JDBC-з’єднанням
+            ├── model/
+            │   └── Account.java              # POJO-модель для рядка таблиці
+            ├── dao/
+            │   ├── AccountDAO.java           # Інтерфейс CRUD-операцій
+            │   └── AccountDAOImpl.java       # Реалізація DAO через JDBC
+            └── Main.java                     # Приклад використання DAO
+```
+
+> **Чому так?**  
+> - **sql/**: ізольований скрипт допомагає швидко ініціалізувати БД незалежно від коду.  
+> - **util/**: приховує деталі роботи з JDBC, даючи єдину точку зміни параметрів підключення.  
+> - **model/**: POJO забезпечує відокремлення даних від бізнес-логіки.  
+> - **dao/**: чітке розділення контракту (інтерфейсу) і реалізації надає гнучкість для заміни механізму збереження (наприклад, Hibernate замість прямого JDBC).
+
+---
+
+## 2. SQL: Ініціалізація бази
+
+**Файл:** `sql/create_accounts_db.sql`
+
+```sql
+-- 1) Створення схеми (якщо її немає)
+CREATE DATABASE IF NOT EXISTS accounts_db;
+
+-- 2) Перемикання контексту на нашу БД
+USE accounts_db;
+
+-- 3) Визначення структури таблиці account
+CREATE TABLE IF NOT EXISTS account (
+  id INT AUTO_INCREMENT PRIMARY KEY,       -- Унікальний ключ, автоінкремент
+  first_name VARCHAR(255),                -- Ім’я користувача
+  last_name VARCHAR(255),                 -- Прізвище користувача
+  username VARCHAR(255) NOT NULL UNIQUE,  -- Логін (унікальний)
+  email VARCHAR(255) NOT NULL UNIQUE,     -- Email (унікальний)
+  password VARCHAR(255) NOT NULL,         -- Хеш пароля
+  role_id INT                             -- Логічне посилання на роль (без FK)
+);
+```
+
+> **Пояснення**  
+> - `AUTO_INCREMENT`: автоматичне збільшення `id` при вставці.  
+> - `UNIQUE`: гарантує відсутність повторів для логіна та email.  
+> - Таблиця **автономна**, без зовнішніх ключів — зручно для демонстрацій і тестів.
+
+---
+
+## 3. Параметри підключення
+
+**Файл:** `src/com/example/util/DatabaseConnection.java`
 
 ```java
 package com.example.util;
@@ -12,149 +73,190 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
+/**
+ * Одноразовий (singleton) клас для отримання JDBC-з’єднання.
+ * Спрощує управління ресурсами і дозволяє змінювати налаштування підключення в одному місці.
+ */
 public class DatabaseConnection {
-    // URL підключення до MySQL для permission_db
-    private static final String URL = "jdbc:mysql://localhost:3306/permission_db?useSSL=false&serverTimezone=UTC";
+    private static final String URL  =
+        "jdbc:mysql://localhost:3306/accounts_db?useSSL=false&serverTimezone=UTC";
     private static final String USER = "root";
-    private static final String PASSWORD = "password";
+    private static final String PASS = "your_password_here";
 
-    private static Connection connection;
+    private static Connection conn;
 
     private DatabaseConnection() { }
 
     /**
-     * Повертає єдине з’єднання JDBC до permission_db.
-     * Якщо з’єднання ще не створене або закрите — створює нове.
+     * Повертає єдине з’єднання з базою.
+     * Якщо з’єднання не існує або закрите — створює нове.
      */
     public static Connection getConnection() throws SQLException {
-        if (connection == null || connection.isClosed()) {
-            connection = DriverManager.getConnection(URL, USER, PASSWORD);
+        if (conn == null || conn.isClosed()) {
+            conn = DriverManager.getConnection(URL, USER, PASS);
         }
-        return connection;
+        return conn;
     }
 }
 ```
 
-**Пояснення**  
-- Оновлений **URL** вказує на схему `permission_db`.  
-- Решта логіки кешування `Connection` аналогічна іншим DAO.
+> **Поради**  
+> - Для продакшн-систем робіть пул з’єднань (HikariCP, Apache DBCP).  
+> - Не зберігайте пароль у коді — використовуйте змінні оточення.
 
 ---
 
-## 2. Permission.java (модель)
+##  4. POJO: Account.java
+
+**Файл:** `src/com/example/model/Account.java`
 
 ```java
 package com.example.model;
 
-public class Permission {
-    private int id;            // зберігає значення AUTO_INCREMENT
-    private String name;       // назва дозволу
+/**
+ * Модель об’єкта Account, яка відповідає таблиці account.
+ * Використовується для передачі даних між DAO і бізнес-логікою.
+ */
+public class Account {
+    private int id;
+    private String firstName;
+    private String lastName;
+    private String username;
+    private String email;
+    private String password;
+    private int roleId;
 
-    public Permission() { }
+    public Account() { }
 
-    public Permission(String name) {
-        this.name = name;
+    // Конструктор для створення нового запису
+    public Account(String firstName, String lastName,
+                   String username, String email,
+                   String password, int roleId) {
+        this.firstName = firstName;
+        this.lastName  = lastName;
+        this.username  = username;
+        this.email     = email;
+        this.password  = password;
+        this.roleId    = roleId;
     }
 
-    public Permission(int id, String name) {
+    // Конструктор для читання з бази (включно з id)
+    public Account(int id, String firstName, String lastName,
+                   String username, String email,
+                   String password, int roleId) {
+        this(firstName, lastName, username, email, password, roleId);
         this.id = id;
-        this.name = name;
     }
 
-    // Геттери і сеттери
-    public int getId() { return id; }
-    public void setId(int id) { this.id = id; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    // Геттери і сеттери для всіх полів
+    // ...
 
     @Override
     public String toString() {
-        return "Permission{id=" + id +
-               ", name='" + name + ''' +
+        return "Account{" +
+               "id=" + id +
+               ", firstName='" + firstName + ''' +
+               ", lastName='" + lastName + ''' +
+               ", username='" + username + ''' +
+               ", email='" + email + ''' +
+               ", roleId=" + roleId +
                '}';
     }
 }
 ```
 
-**Пояснення**  
-- POJO-клас для відображення запису таблиці `permission`.  
-- Конструктори дозволяють створювати об’єкт з/без `id`.
+> **Чому POJO?**  
+> - Легко тестувати.  
+> - Не залежить від конкретного фреймворку.
 
 ---
 
-## 3. PermissionDAO.java (інтерфейс)
+## 5. DAO-шари
+
+### 5.1. Інтерфейс AccountDAO
+
+**Файл:** `src/com/example/dao/AccountDAO.java`
 
 ```java
 package com.example.dao;
 
-import com.example.model.Permission;
+import com.example.model.Account;
 import java.sql.SQLException;
 import java.util.List;
 
-public interface PermissionDAO {
-    // Додати новий дозвіл
-    void addPermission(Permission permission) throws SQLException;
-    // Отримати дозвіл за id
-    Permission getPermissionById(int id) throws SQLException;
-    // Отримати всі дозволи
-    List<Permission> getAllPermissions() throws SQLException;
-    // Оновити назву дозволу
-    void updatePermission(Permission permission) throws SQLException;
-    // Видалити дозвіл за id
-    void deletePermission(int id) throws SQLException;
+/**
+ * Контракт CRUD-операцій з таблицею account.
+ */
+public interface AccountDAO {
+    void addAccount(Account a) throws SQLException;
+    Account getAccountById(int id) throws SQLException;
+    List<Account> getAllAccounts() throws SQLException;
+    void updateAccount(Account a) throws SQLException;
+    void deleteAccount(int id) throws SQLException;
 }
 ```
 
-**Пояснення**  
-- Інтерфейс описує CRUD-операції для таблиці `permission`.  
-- Розділяє контракти від реалізації.
+### 5.2. Реалізація
 
----
-
-## 4. PermissionDAOImpl.java (реалізація)
+**Файл:** `src/com/example/dao/AccountDAOImpl.java`
 
 ```java
 package com.example.dao;
 
-import com.example.model.Permission;
+import com.example.model.Account;
 import com.example.util.DatabaseConnection;
 
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-public class PermissionDAOImpl implements PermissionDAO {
+/**
+ * Реалізація AccountDAO за допомогою прямого JDBC.
+ */
+public class AccountDAOImpl implements AccountDAO {
     private final Connection conn;
 
-    // Підключення до permission_db
-    public PermissionDAOImpl() throws SQLException {
+    public AccountDAOImpl() throws SQLException {
         this.conn = DatabaseConnection.getConnection();
     }
 
     @Override
-    public void addPermission(Permission permission) throws SQLException {
-        String sql = "INSERT INTO permission (name) VALUES (?)";
-        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            ps.setString(1, permission.getName());
+    public void addAccount(Account a) throws SQLException {
+        String sql = "INSERT INTO account " +
+                     "(first_name,last_name,username,email,password,role_id) VALUES (?,?,?,?,?,?)";
+        try (PreparedStatement ps = conn.prepareStatement(
+                sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, a.getFirstName());
+            ps.setString(2, a.getLastName());
+            ps.setString(3, a.getUsername());
+            ps.setString(4, a.getEmail());
+            ps.setString(5, a.getPassword());
+            ps.setInt(6, a.getRoleId());
             ps.executeUpdate();
+            // Отримуємо згенерований PK
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 if (rs.next()) {
-                    permission.setId(rs.getInt(1));
+                    a.setId(rs.getInt(1));
                 }
             }
         }
     }
 
     @Override
-    public Permission getPermissionById(int id) throws SQLException {
-        String sql = "SELECT * FROM permission WHERE id = ?";
+    public Account getAccountById(int id) throws SQLException {
+        String sql = "SELECT * FROM account WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return new Permission(
+                    return new Account(
                         rs.getInt("id"),
-                        rs.getString("name")
+                        rs.getString("first_name"),
+                        rs.getString("last_name"),
+                        rs.getString("username"),
+                        rs.getString("email"),
+                        rs.getString("password"),
+                        rs.getInt("role_id")
                     );
                 }
             }
@@ -163,15 +265,20 @@ public class PermissionDAOImpl implements PermissionDAO {
     }
 
     @Override
-    public List<Permission> getAllPermissions() throws SQLException {
-        List<Permission> list = new ArrayList<>();
-        String sql = "SELECT * FROM permission";
+    public List<Account> getAllAccounts() throws SQLException {
+        List<Account> list = new ArrayList<>();
+        String sql = "SELECT * FROM account";
         try (Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery(sql)) {
             while (rs.next()) {
-                list.add(new Permission(
+                list.add(new Account(
                     rs.getInt("id"),
-                    rs.getString("name")
+                    rs.getString("first_name"),
+                    rs.getString("last_name"),
+                    rs.getString("username"),
+                    rs.getString("email"),
+                    rs.getString("password"),
+                    rs.getInt("role_id")
                 ));
             }
         }
@@ -179,19 +286,25 @@ public class PermissionDAOImpl implements PermissionDAO {
     }
 
     @Override
-    public void updatePermission(Permission permission) throws SQLException {
-        String sql = "UPDATE permission SET name = ? WHERE id = ?";
+    public void updateAccount(Account a) throws SQLException {
+        String sql = "UPDATE account SET first_name=?, last_name=?, username=?, " +
+                     "email=?, password=?, role_id=? WHERE id=?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, permission.getName());
-            ps.setInt(2, permission.getId());
+            ps.setString(1, a.getFirstName());
+            ps.setString(2, a.getLastName());
+            ps.setString(3, a.getUsername());
+            ps.setString(4, a.getEmail());
+            ps.setString(5, a.getPassword());
+            ps.setInt(6, a.getRoleId());
+            ps.setInt(7, a.getId());
             ps.executeUpdate();
         }
     }
 
     @Override
-    public void deletePermission(int id) throws SQLException {
-        String sql = "DELETE FROM permission WHERE id = ?";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+    public void deleteAccount(int id) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "DELETE FROM account WHERE id=?")) {
             ps.setInt(1, id);
             ps.executeUpdate();
         }
@@ -199,58 +312,53 @@ public class PermissionDAOImpl implements PermissionDAO {
 }
 ```
 
-**Пояснення**  
-- Використовуються `PreparedStatement` та `RETURN_GENERATED_KEYS`.  
-- Методи `getPermissionById` і `getAllPermissions` повертають об’єкти моделі.
-
 ---
 
-## 5. Main.java (приклад використання)
+## 6. Main.java
+
+**Файл:** `src/com/example/Main.java`
 
 ```java
 package com.example;
 
-import com.example.dao.PermissionDAO;
-import com.example.dao.PermissionDAOImpl;
-import com.example.model.Permission;
+import com.example.dao.AccountDAO;
+import com.example.dao.AccountDAOImpl;
+import com.example.model.Account;
 
 import java.sql.SQLException;
 import java.util.List;
 
+/**
+ * Демонстрація CRUD-операцій над таблицею account.
+ */
 public class Main {
     public static void main(String[] args) {
         try {
-            PermissionDAO permDao = new PermissionDAOImpl();
+            AccountDAO dao = new AccountDAOImpl();
 
-            
-            Permission perm = new Permission("view_media_request");
-            permDao.addPermission(perm);
-            System.out.println("Додано дозвіл: " + perm);
+            // CREATE: додаємо запис
+            Account a = new Account("Olena", "Shevchenko",
+                                    "olena_shev", "olena@example.com",
+                                    "pass123", 2);
+            dao.addAccount(a);
+            System.out.println("Created: " + a);
 
-            
-            List<Permission> perms = permDao.getAllPermissions();
-            System.out.println("Всі дозволи:");
-            perms.forEach(System.out::println);
+            // READ: всі записи
+            List<Account> all = dao.getAllAccounts();
+            all.forEach(System.out::println);
 
-            
-            perm.setName("edit_media_request");
-            permDao.updatePermission(perm);
-            System.out.println("Після оновлення: " + permDao.getPermissionById(perm.getId()));
+            // UPDATE: міняємо email
+            a.setEmail("olena.shev@newmail.com");
+            dao.updateAccount(a);
+            System.out.println("After update: " + dao.getAccountById(a.getId()));
 
-            
-            permDao.deletePermission(perm.getId());
-            System.out.println("Після видалення залишились:");
-            permDao.getAllPermissions().forEach(System.out::println);
+            // DELETE: видаляємо запис
+            dao.deleteAccount(a.getId());
+            System.out.println("After delete:");
+            dao.getAllAccounts().forEach(System.out::println);
 
-        } catch (SQLException e) {
-            e.printStackTrace();
+        } catch (SQLException ex) {
+            ex.printStackTrace();
         }
     }
 }
-```
-
-**Пояснення**  
-- Аналогічний workflow: **add** → **get all** → **update** → **get by id** → **delete** → **get all**.
-
----
-
